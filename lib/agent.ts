@@ -3,6 +3,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { analysisPromptTemplate } from "./prompts";
 import { researchTools } from "./tools";
+import { z } from "zod";
 
 // State Annotation for LangGraph
 export const GraphState = Annotation.Root({
@@ -39,8 +40,9 @@ export const GraphState = Annotation.Root({
 });
 
 const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-1.5-flash",
+  model: "gemini-2.5-flash",
   temperature: 0,
+  apiKey: process.env.GOOGLE_API_KEY,
 });
 
 async function researchNode(state: typeof GraphState.State) {
@@ -77,22 +79,16 @@ async function analysisNode(state: typeof GraphState.State) {
     .replace("{growthProspects}", researchData.growthProspects);
 
   // Structured output schema matching the prompt instructions
-  const structuredLlm = llm.withStructuredOutput({
-    name: "investment_verdict",
-    description: "Rigorous investment analysis output",
-    schema: {
-      type: "object",
-      properties: {
-        verdict: { type: "string", enum: ["INVEST", "PASS", "NEUTRAL"] },
-        investScore: { type: "number", description: "0-100 score, higher = stronger buy" },
-        confidenceScore: { type: "number", description: "0-100 score, how confident you are" },
-        keyStrengths: { type: "array", items: { type: "string" } },
-        keyRisks: { type: "array", items: { type: "string" } },
-        finalReasoning: { type: "string", description: "3-4 paragraph investment thesis" },
-      },
-      required: ["verdict", "investScore", "confidenceScore", "keyStrengths", "keyRisks", "finalReasoning"],
-    }
+  const investmentVerdictSchema = z.object({
+    verdict: z.enum(["INVEST", "PASS", "NEUTRAL"]),
+    investScore: z.number().describe("0-100 score, higher = stronger buy"),
+    confidenceScore: z.number().describe("0-100 score, how confident you are"),
+    keyStrengths: z.array(z.string()),
+    keyRisks: z.array(z.string()),
+    finalReasoning: z.string().describe("3-4 paragraph investment thesis"),
   });
+
+  const structuredLlm = llm.withStructuredOutput(investmentVerdictSchema);
 
   const response = await structuredLlm.invoke([
     new SystemMessage("You are an expert financial analyst."),

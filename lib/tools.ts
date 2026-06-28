@@ -1,8 +1,8 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
-import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+import { TavilySearch } from "@langchain/tavily";
 import { z } from "zod";
 
-const tavily = new TavilySearchResults({ maxResults: 5 });
+const tavily = new TavilySearch({ maxResults: 5 });
 
 const toolSchema = z.object({
   company: z.string().describe("The name of the company to research"),
@@ -11,12 +11,13 @@ const toolSchema = z.object({
 
 const executeSearch = async (toolQuery: string) => {
   try {
-    const results = await tavily.invoke(toolQuery);
-    if (!results || results.length === 0 || results === "[]") {
+    const results = await tavily.invoke({ query: toolQuery });
+    if (!results || (Array.isArray(results) && results.length === 0) || results === "[]") {
       return "No data found for this query. Proceeding with available information.";
     }
     return typeof results === "string" ? results : JSON.stringify(results);
   } catch (error) {
+    console.error("Tavily search execution error:", error);
     return "No data found for this query. Proceeding with available information.";
   }
 };
