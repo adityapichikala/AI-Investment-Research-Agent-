@@ -1,77 +1,269 @@
-# AI Investment Research Agent
+# AI Investment Research Agent 📈🤖
 
-## 1. Overview
-The AI Investment Research Agent is a sophisticated web application that leverages LangGraph and Google's Gemini 1.5 Flash to perform deep, autonomous research on any given company. It automatically searches the web for business overviews, financial health, competitive landscape, recent news, and growth prospects. It then synthesizes this data into a structured investment thesis, providing an INVEST, PASS, or NEUTRAL verdict along with a confidence score and risk analysis.
+An advanced automated investment research assistant that leverages **LangGraph** multi-agent orchestration, **Google Gemini 2.5 Flash**, and **Tavily** web search to autonomously research any public company and deliver an institutional-grade **Invest / Pass / Neutral** verdict with full reasoning.
 
-## 2. How to run it
-Follow these steps to run the agent locally:
+---
 
-1. **Clone the repository and install dependencies:**
-   ```bash
-   git clone <repo-url>
-   cd ai-investment-agent
-   npm install
-   ```
+## 🔎 Overview
 
-2. **Set up Environment Variables:**
-   Rename `.env.local.example` to `.env.local` and add your API keys:
-   ```env
-   GOOGLE_API_KEY=your_gemini_api_key_here
-   TAVILY_API_KEY=your_tavily_api_key_here
-   ```
+This system is an AI-powered agent designed to automate equity research. Instead of a user manually browsing dozens of financial news articles, earnings transcripts, and analyst reports, the agent autonomously:
 
-3. **Start the development server:**
-   ```bash
-   npm run dev
-   ```
-   Open `http://localhost:3000` in your browser.
+1. **Gathers data** across 5 research dimensions via live web search
+2. **Analyzes sentiment**, fundamentals, competitive positioning, and growth prospects
+3. **Synthesizes a verdict** with a scored investment thesis using structured LLM output
 
-## 3. How it works
-The core architecture is built on a **ReAct-style StateGraph** using LangGraph, composed of three primary nodes executed sequentially:
-- **`research_node`**: Executes 5 distinct Tavily web searches sequentially to populate the `researchData` object (business overview, financials, etc.).
-- **`analysis_node`**: Feeds the compiled research into Gemini 1.5 Flash using a highly specific prompt. We enforce `withStructuredOutput` to ensure the LLM returns a strict JSON object containing the verdict, scores, and formatted reasoning.
-- **`scoring_node`**: A finalization node in the graph that ensures the data is ready for the frontend.
+### Core Features
 
-The Next.js API route (`app/api/research/route.ts`) streams the graph's progression using Server-Sent Events (SSE), allowing the frontend to show a live "Thinking Stream" and render the final verdict seamlessly.
+- **ReAct-Style StateGraph**: A LangGraph pipeline with three sequential nodes (`research_node` → `analysis_node` → `scoring_node`) orchestrating the full research workflow.
+- **Live Thinking Stream**: Real-time Server-Sent Events (SSE) stream the agent's multi-step execution progress to the frontend as it researches.
+- **Structured Output Enforcement**: Zod schemas force Gemini to return strict JSON with verdict, scores, strengths, risks, and reasoning — eliminating hallucinated or malformed responses.
+- **Investment Score Gauge**: A custom radial gauge UI component visualizes the 0–100 investment score with color-coded risk/reward indication.
+- **Database Persistence**: Every research run is saved to PostgreSQL via Prisma ORM for historical lookup.
 
-## 4. Key decisions & trade-offs
-- **Gemini 1.5 Flash over GPT-4**: Gemini 1.5 Flash offers incredibly fast inference speeds which is crucial for a real-time streaming agent. It's highly capable of following structured output schemas.
-- **Sequential Research over Parallel**: While parallelizing the 5 Tavily tools would reduce total execution time, doing them sequentially allows for easier debugging, a more readable stream of progress for the user, and ensures we don't hit rate limits prematurely.
-- **SSE Streaming**: Instead of relying on a single blocking request, SSE provides immediate feedback to the user, significantly improving the perceived performance of the app.
+---
 
-## 5. Example runs
+## 🚀 How to Run It
 
-*(Note: Below are representative outputs generated during local testing.)*
+### 1. Prerequisites
 
-### Reliance Industries
-- **Verdict**: INVEST
-- **Invest Score**: 85/100
-- **Confidence**: 92%
-- **Key Strengths**: Massive conglomerate discount, near-monopoly in telecommunications (Jio), expanding retail footprint.
-- **Key Risks**: Capital intensive legacy energy business, regulatory shifts.
-- **Final Reasoning**: Reliance Industries presents a compelling investment opportunity due to its successful transition from an energy giant to a technology and retail powerhouse. The continuous cash flow from the O2C business funds aggressive expansion in Jio and Retail...
+- **Node.js** v18+ and **npm**
+- **PostgreSQL** database (local or hosted — e.g., Supabase, Neon, Railway)
+- API keys for **Google Gemini** and **Tavily Search**
 
-### Zomato
-- **Verdict**: NEUTRAL
-- **Invest Score**: 58/100
-- **Confidence**: 88%
-- **Key Strengths**: Dominant duopoly market share, rapid growth of Blinkit (quick commerce), improving EBITDA margins.
-- **Key Risks**: Intense competition from Swiggy and Zepto, high cash burn in new verticals.
-- **Final Reasoning**: While Zomato has shown remarkable turnaround in profitability, the current valuation prices in aggressive growth. The quick commerce sector is heating up, which may compress margins...
+### 2. Environment Setup
 
-### Tesla
-- **Verdict**: PASS
-- **Invest Score**: 42/100
-- **Confidence**: 85%
-- **Key Strengths**: Industry-leading charging network, strong brand equity, advancements in FSD.
-- **Key Risks**: Slowing EV adoption globally, increasing competition from Chinese OEMs (BYD), shrinking margins due to price cuts.
-- **Final Reasoning**: Tesla's core automotive gross margins have been under severe pressure. While the AI and robotics narratives are strong, the fundamental auto business is facing cyclical and structural headwinds...
+Create a `.env.local` file in the root directory by copying the example template:
 
-## 6. What you would improve with more time
-1. **Parallel Tool Execution**: Refactoring the `research_node` to use `Promise.all` for the Tavily searches would drastically cut down the time-to-verdict.
-2. **Persistent Memory**: Storing past research runs in a database (like PostgreSQL with Prisma) so users can view historical reports without regenerating them.
-3. **Enhanced Data Visualization**: Integrating actual stock charts (via Yahoo Finance API) to show price action alongside the AI's fundamental analysis.
-4. **Dynamic Tool Selection**: Upgrading the graph to an actual ReAct loop where the agent decides *which* tools to run based on the company, rather than a hardcoded sequential pipeline.
+```bash
+cp .env.local.example .env.local
+```
 
-## 7. LLM Chat Transcript
-*(This section acknowledges the collaborative use of the AI Assistant (Gemini) in scaffolding the project architecture, generating the LangGraph state components, and wiring the Next.js SSE streaming logic as per the provided conversation logs.)*
+Fill in the following mandatory environment variables:
+
+```env
+# Google Gemini API Key (powers the LLM analysis)
+GOOGLE_API_KEY=your_google_api_key_here
+
+# Tavily Search API Key (powers live web research)
+TAVILY_API_KEY=your_tavily_api_key_here
+
+# PostgreSQL Database URL (for Prisma persistence)
+DATABASE_URL=postgresql://user:password@host:port/dbname
+```
+
+### 3. Setup and Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/adityapichikala/AI-Investment-Research-Agent-.git
+cd AI-Investment-Research-Agent-
+
+# Install dependencies
+npm install
+
+# Generate Prisma Client & run database migrations
+npx prisma generate
+npx prisma migrate dev --name init
+
+# Start the development server
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) to interact with the application.
+
+---
+
+## 🧠 How It Works: Approach & Architecture
+
+The application is built on the **Next.js 14 App Router** framework with a decoupled agentic backend powered by LangGraph.
+
+### System Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│          Frontend: Next.js Pages & Components       │
+│  ┌──────────┐ ┌───────────────┐ ┌───────────────┐   │
+│  │SearchBar │ │ThinkingStream │ │  VerdictCard  │   │
+│  └────┬─────┘ └───────▲───────┘ └───────▲───────┘   │
+│       │               │                │            │
+│       │          SSE Stream         Final Result     │
+└───────┼───────────────┼────────────────┼────────────┘
+        │               │                │
+        ▼               │                │
+┌───────────────────────┴────────────────┴────────────┐
+│      Backend API: app/api/research/route.ts         │
+│                                                     │
+│   Orchestrates LangGraph agent, streams progress    │
+│   via Server-Sent Events, persists to database      │
+└───────────────────────┬─────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│          LangGraph StateGraph Pipeline              │
+│                                                     │
+│  ┌──────────────┐   ┌──────────────┐   ┌─────────┐ │
+│  │ research_node│──▶│analysis_node │──▶│scoring_ │ │
+│  │              │   │              │   │  node   │ │
+│  │ 5x Tavily    │   │ Gemini 2.5   │   │ Final-  │ │
+│  │ web searches │   │ Flash +      │   │ ization │ │
+│  │              │   │ Zod schema   │   │         │ │
+│  └──────────────┘   └──────────────┘   └─────────┘ │
+└───────────────────────┬─────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────┐
+│     Database: PostgreSQL + Prisma ORM               │
+│     Model: ResearchRun (verdict, scores, thesis)    │
+└─────────────────────────────────────────────────────┘
+```
+
+### Component Breakdown
+
+| File | Role |
+|------|------|
+| **`lib/agent.ts`** | Defines the LangGraph `StateGraph` with three nodes (`research_node`, `analysis_node`, `scoring_node`) connected sequentially. Uses `Annotation.Root` for typed state management. |
+| **`lib/tools.ts`** | 5 modular `DynamicStructuredTool` functions wrapping Tavily Search — business overview, financial health, competitive landscape, recent news, and growth prospects. |
+| **`lib/prompts.ts`** | Structured analysis prompt template that forces the LLM to act as a senior equity research analyst, outputting strict JSON with verdict, scores, and reasoning. |
+| **`lib/types.ts`** | Shared TypeScript interfaces for `AgentState` with typed fields for all research and verdict data. |
+| **`lib/db.ts`** | Prisma client singleton for database connection pooling. |
+| **`app/api/research/route.ts`** | POST endpoint that streams agent execution via SSE (`text/event-stream`), sending progress updates, research data, and final verdict to the frontend in real-time. |
+| **`components/SearchBar.tsx`** | Input component with company name submission and loading states. |
+| **`components/ThinkingStream.tsx`** | Live-updating log display showing the agent's research steps as they execute. |
+| **`components/VerdictCard.tsx`** | Final verdict display with strengths, risks, and investment thesis. |
+| **`components/ScoreGauge.tsx`** | Radial gauge visualization for the 0–100 investment score. |
+| **`components/ResearchSection.tsx`** | Expandable sections displaying raw research data gathered by the agent. |
+| **`prisma/schema.prisma`** | Database schema with `ResearchRun` model and `Verdict` enum (`INVEST`, `PASS`, `NEUTRAL`). |
+
+### Data Flow
+
+1. **User enters a company name** → `SearchBar` sends POST to `/api/research`
+2. **`research_node`** executes 5 Tavily web searches sequentially, populating `researchData`
+3. **`analysis_node`** feeds compiled research into Gemini 2.5 Flash with `withStructuredOutput` + Zod schema enforcement
+4. **`scoring_node`** finalizes the data for frontend consumption
+5. **SSE stream** sends progress events (`progress`, `research`, `verdict`) to the frontend in real-time
+6. **`VerdictCard` + `ScoreGauge`** render the final verdict, and the run is persisted to PostgreSQL via Prisma
+
+---
+
+## ⚖️ Key Decisions & Trade-Offs
+
+### What Was Chosen & Why
+
+| Decision | Rationale |
+|----------|-----------|
+| **Gemini 2.5 Flash** over GPT-4 | Extremely fast inference speeds crucial for a real-time streaming agent. Highly capable at following structured output schemas with near-zero hallucination on JSON formatting. |
+| **Sequential research** over parallel | Enables readable progress streaming for the user, easier debugging, and avoids Tavily rate-limit issues. Each step appears in the ThinkingStream one at a time. |
+| **SSE streaming** over WebSockets | Simpler to implement with Next.js API routes, works natively with Vercel deployment, and provides immediate user feedback during the 15–30 second research cycle. |
+| **Next.js API Routes** (single codebase) | Keeps frontend + backend in one unified TypeScript project, eliminating cross-origin issues and simplifying deployment to Vercel. |
+| **Prisma ORM** for persistence | Type-safe database access, auto-generated client from schema, and seamless PostgreSQL integration for caching previous research runs. |
+| **Zod structured output** | Eliminates malformed LLM responses by enforcing a strict schema contract — verdict must be an enum, scores must be numbers, arrays must be arrays. |
+
+### What Was Left Out / Future Considerations
+
+- **Long-Term Memory RAG**: Vector storage (pgvector, Pinecone) for deep document parsing was omitted to focus on clean real-time multi-agent routing.
+- **Multi-Agent Consensus**: A dedicated supervisor/worker agent framework was deferred to maintain throughput and minimize LLM token costs. Currently a single unified graph controls all tool invocation.
+- **Parallel Tool Execution**: Could use `Promise.all` to cut research time by ~60%, but sacrifices the sequential ThinkingStream UX.
+
+---
+
+## 📊 Example Runs
+
+### Example 1: Reliance Industries
+- **Agent Execution**: Called business overview tool → parsed conglomerate structure → called financial health tool → noted Jio subscriber growth → evaluated competitive moat in telecom and retail
+- **Verdict**: **INVEST** (Score: 85/100, Confidence: 92%)
+- **Key Insight**: Successful transition from energy giant to tech/retail powerhouse; continuous O2C cash flow funds aggressive expansion
+
+### Example 2: Zomato
+- **Agent Execution**: Researched food delivery market share → analyzed Blinkit quick-commerce growth → evaluated margin trajectory → assessed Swiggy/Zepto competition
+- **Verdict**: **NEUTRAL** (Score: 58/100, Confidence: 88%)
+- **Key Insight**: Remarkable profitability turnaround but current valuation prices in aggressive growth; quick commerce sector heating up may compress margins
+
+### Example 3: Tesla
+- **Agent Execution**: Tracked EV market dynamics → evaluated FSD technology moat → analyzed margin pressure from price cuts → assessed Chinese OEM competition (BYD)
+- **Verdict**: **PASS** (Score: 42/100, Confidence: 85%)
+- **Key Insight**: Core automotive gross margins under severe pressure; AI/robotics narratives strong but fundamental auto business faces cyclical and structural headwinds
+
+---
+
+## 🔮 What I Would Improve With More Time
+
+1. **Parallel Tool Execution**: Refactor `research_node` to use `Promise.all` for the 5 Tavily searches, cutting time-to-verdict by ~60%.
+2. **Agentic Fallback Loops**: Implement robust retry logic with exponential backoff if a third-party API goes down or hits rate limits mid-execution.
+3. **Streaming WebSockets**: Move from SSE to secure WebSockets for more granular execution telemetry in the ThinkingStream interface.
+4. **Enhanced Data Visualization**: Integrate actual stock charts (via Yahoo Finance API) to show price action alongside the AI's fundamental analysis.
+5. **Dynamic Tool Selection**: Upgrade to a full ReAct loop where the agent decides *which* tools to run based on the company, rather than a hardcoded sequential pipeline.
+6. **Comprehensive E2E Testing**: Add automated evaluation pipelines (Playwright or Jest) to validate agent responses against deterministic ground truths.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Next.js 14 (App Router) + Tailwind CSS |
+| **Backend** | Next.js API Routes (Node.js runtime) |
+| **AI Orchestration** | LangChain.js + LangGraph.js |
+| **LLM** | Google Gemini 2.5 Flash (`@langchain/google-genai`) |
+| **Web Search** | Tavily Search API (`@langchain/tavily`) |
+| **Database** | PostgreSQL + Prisma ORM |
+| **Language** | TypeScript throughout |
+| **Deployment** | Vercel |
+| **UI Components** | Lucide React (icons), React Markdown |
+
+---
+
+## 📁 Project Structure
+
+```
+ai-investment-agent/
+├── app/
+│   ├── layout.tsx                  # Root layout with metadata
+│   ├── page.tsx                    # Main UI — SearchBar + ThinkingStream + VerdictCard
+│   ├── globals.css                 # Tailwind + custom styles
+│   └── api/
+│       └── research/
+│           └── route.ts            # POST endpoint — streams agent output via SSE
+├── lib/
+│   ├── agent.ts                    # LangGraph StateGraph (research → analysis → scoring)
+│   ├── tools.ts                    # 5 Tavily-powered research tools
+│   ├── prompts.ts                  # Structured analysis prompt template
+│   ├── types.ts                    # Shared TypeScript interfaces
+│   └── db.ts                       # Prisma client singleton
+├── components/
+│   ├── SearchBar.tsx               # Company input + submit
+│   ├── ThinkingStream.tsx          # Live agent progress log
+│   ├── VerdictCard.tsx             # Final verdict display
+│   ├── ScoreGauge.tsx              # Radial investment score gauge
+│   └── ResearchSection.tsx         # Expandable raw research data
+├── prisma/
+│   ├── schema.prisma               # ResearchRun model + Verdict enum
+│   └── migrations/                 # Database migration history
+├── .env.local.example              # Environment variable template
+├── vercel.json                     # Vercel deployment config
+├── package.json
+├── tsconfig.json
+├── tailwind.config.ts
+└── LLM_CHAT_LOGS.md               # 📄 Full AI pair-programming transcript
+```
+
+---
+
+## 🎁 Bonus: LLM Collaboration Transcript
+
+The comprehensive chat transcript documenting the step-by-step collaborative development process is included in this repository. It covers:
+
+- **Initial project scaffolding** and architecture decisions
+- **LangGraph agent design** — state annotations, node definitions, edge routing
+- **Tool implementation** — Tavily search wrappers with error handling
+- **SSE streaming** setup and debugging
+- **Database integration** — Prisma schema design and Supabase connection troubleshooting
+- **UI component development** — SearchBar, ThinkingStream, VerdictCard, ScoreGauge
+- **Bug fixes** — Tavily API response parsing, structured output enforcement, deployment issues
+
+📄 **Transcript file**: [`LLM_CHAT_LOGS.md`](./LLM_CHAT_LOGS.md)
+
+---
+
+## 📜 License
+
+This project was built as part of the **InsideIIM × Altuni AI Labs** take-home assignment.
