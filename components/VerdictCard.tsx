@@ -18,18 +18,15 @@ export default function VerdictCard({
   keyRisks
 }: VerdictCardProps) {
   
-  let color = "emerald";
   let bgGlow = "shadow-[0_0_40px_rgba(16,185,129,0.15)]";
   let textCol = "text-emerald-500";
   let borderCol = "border-emerald-500/30";
   
   if (verdict === 'PASS') {
-    color = "red";
     bgGlow = "shadow-[0_0_40px_rgba(239,68,68,0.15)]";
     textCol = "text-red-500";
     borderCol = "border-red-500/30";
   } else if (verdict === 'NEUTRAL') {
-    color = "amber";
     bgGlow = "shadow-[0_0_40px_rgba(245,158,11,0.15)]";
     textCol = "text-amber-500";
     borderCol = "border-amber-500/30";

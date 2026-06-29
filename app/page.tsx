@@ -7,6 +7,15 @@ import VerdictCard from "@/components/VerdictCard";
 import ResearchSection from "@/components/ResearchSection";
 import { Search } from "lucide-react";
 
+interface VerdictData {
+  verdict: 'INVEST' | 'PASS' | 'NEUTRAL';
+  investScore: number;
+  confidenceScore: number;
+  keyStrengths: string[];
+  keyRisks: string[];
+  finalReasoning: string;
+}
+
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [steps, setSteps] = useState<StreamStep[]>([]);
@@ -17,7 +26,7 @@ export default function Home() {
     recentNews: "",
     growthProspects: "",
   });
-  const [verdictData, setVerdictData] = useState<any>(null);
+  const [verdictData, setVerdictData] = useState<VerdictData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleSearch = async (company: string) => {
@@ -46,15 +55,22 @@ export default function Home() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = "";
       let done = false;
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
         if (value) {
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n\n");
-          for (const line of lines) {
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Process only complete SSE messages (terminated by \n\n)
+          const parts = buffer.split("\n\n");
+          // Keep the last part as it may be incomplete
+          buffer = parts.pop() || "";
+          
+          for (const part of parts) {
+            const line = part.trim();
             if (line.startsWith("data: ")) {
               try {
                 const event = JSON.parse(line.slice(6));
@@ -75,16 +91,33 @@ export default function Home() {
                   setSteps(prev => [...prev, { step: "Error", detail: event.message, status: 'error' }]);
                   setError(event.message);
                 }
-              } catch (e) {
+              } catch {
                 console.error("Failed to parse event", line);
               }
             }
           }
         }
       }
-    } catch (err: any) {
-      setError(err.message);
-      setSteps(prev => [...prev, { step: "Error", detail: err.message, status: 'error' }]);
+      
+      // Process any remaining data in the buffer after stream ends
+      if (buffer.trim().startsWith("data: ")) {
+        try {
+          const event = JSON.parse(buffer.trim().slice(6));
+          if (event.type === "verdict") {
+            setSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+            setVerdictData(event.data);
+          } else if (event.type === "error") {
+            setSteps(prev => [...prev, { step: "Error", detail: event.message, status: 'error' }]);
+            setError(event.message);
+          }
+        } catch {
+          // Incomplete final chunk — safe to ignore
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An unknown error occurred";
+      setError(message);
+      setSteps(prev => [...prev, { step: "Error", detail: message, status: 'error' }]);
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +136,7 @@ export default function Home() {
             AI Investment Research Agent
           </h1>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-            Powered by <span className="text-gray-200 font-semibold">Gemini 1.5 Flash</span> + <span className="text-gray-200 font-semibold">LangGraph</span>
+            Powered by <span className="text-gray-200 font-semibold">Gemini 2.5 Flash</span> + <span className="text-gray-200 font-semibold">LangGraph</span>
           </p>
         </div>
 

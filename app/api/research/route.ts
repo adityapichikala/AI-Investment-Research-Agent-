@@ -4,6 +4,25 @@ import { prisma } from "@/lib/db";
 
 export const maxDuration = 60; // 60s timeout for Vercel
 
+const MAX_COMPANY_LENGTH = 100;
+
+interface ResearchData {
+  businessOverview: string;
+  financialHealth: string;
+  competitivePosition: string;
+  recentNews: string;
+  growthProspects: string;
+}
+
+interface AnalysisResult {
+  verdict: 'INVEST' | 'PASS' | 'NEUTRAL';
+  investScore: number;
+  confidenceScore: number;
+  keyStrengths: string[];
+  keyRisks: string[];
+  finalReasoning: string;
+}
+
 export async function POST(req: NextRequest) {
   try {
     let body;
@@ -20,12 +39,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Company name is required", code: 400 }, { status: 400 });
     }
 
+    // Input sanitization: trim, limit length, strip control characters
+    const sanitizedCompany = company
+      .trim()
+      .slice(0, MAX_COMPANY_LENGTH)
+      .replace(/[<>"'`;{}()\\/]/g, "")
+      .replace(/[\x00-\x1F\x7F]/g, "");
+
+    if (!sanitizedCompany) {
+      return NextResponse.json({ error: "Invalid company name", code: 400 }, { status: 400 });
+    }
+
     const encoder = new TextEncoder();
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    let writerClosed = false;
 
-    const writeEvent = async (event: any) => {
-      await writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    const writeEvent = async (event: Record<string, unknown>) => {
+      if (writerClosed) return;
+      try {
+        await writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      } catch {
+        // Client disconnected — silently stop writing
+        writerClosed = true;
+      }
     };
 
     // Run the agent in the background while returning the stream
@@ -33,9 +70,9 @@ export async function POST(req: NextRequest) {
       try {
         await writeEvent({ type: "progress", step: "Searching business overview...", detail: "Gathering core company data" });
         
-        let researchData: any = null;
-        let analysisData: any = null;
-        const agentStream = await agent.stream({ company }, { streamMode: "updates" });
+        let researchData: ResearchData | null = null;
+        let analysisData: AnalysisResult | null = null;
+        const agentStream = await agent.stream({ company: sanitizedCompany }, { streamMode: "updates" });
 
         for await (const chunk of agentStream) {
           if (chunk.research_node) {
@@ -76,30 +113,38 @@ export async function POST(req: NextRequest) {
           try {
             await prisma.researchRun.create({
               data: {
-                company,
+                company: sanitizedCompany,
                 verdict: analysisData.verdict,
                 investScore: analysisData.investScore,
                 confidenceScore: analysisData.confidenceScore,
                 finalReasoning: analysisData.finalReasoning,
                 keyStrengths: analysisData.keyStrengths,
                 keyRisks: analysisData.keyRisks,
-                researchData: researchData || {},
+                researchData: JSON.parse(JSON.stringify(researchData || {})),
                 messages: [],
                 tokensUsed: 0,
               }
             });
-            console.log("Successfully saved research run to database for", company);
+            console.log("Successfully saved research run to database for", sanitizedCompany);
           } catch (dbErr) {
             console.error("Failed to save research run to database:", dbErr);
           }
         } else {
           throw new Error("Analysis failed to produce verdict data");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : "An error occurred during research";
         console.error("Agent Error:", err);
-        await writeEvent({ type: "error", message: err.message || "An error occurred during research" });
+        await writeEvent({ type: "error", message: errorMessage });
       } finally {
-        await writer.close();
+        if (!writerClosed) {
+          try {
+            await writer.close();
+          } catch {
+            // Writer already closed or errored
+          }
+        }
+        writerClosed = true;
       }
     })();
 
@@ -110,8 +155,9 @@ export async function POST(req: NextRequest) {
         "Connection": "keep-alive",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
     console.error("API Route Outer Error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error", code: 500 }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, code: 500 }, { status: 500 });
   }
 }

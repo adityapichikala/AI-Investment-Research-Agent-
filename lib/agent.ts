@@ -1,6 +1,6 @@
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { SystemMessage, HumanMessage, BaseMessage } from "@langchain/core/messages";
 import { analysisPromptTemplate } from "./prompts";
 import { researchTools } from "./tools";
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { z } from "zod";
 // State Annotation for LangGraph
 export const GraphState = Annotation.Root({
   company: Annotation<string>(),
-  messages: Annotation<any[]>({
+  messages: Annotation<BaseMessage[]>({
     reducer: (x, y) => x.concat(y),
     default: () => [],
   }),
@@ -17,7 +17,6 @@ export const GraphState = Annotation.Root({
     financialHealth: string;
     competitivePosition: string;
     recentNews: string;
-    managementRisks: string;
     growthProspects: string;
   }>({
     reducer: (x, y) => ({ ...x, ...y }),
@@ -26,7 +25,6 @@ export const GraphState = Annotation.Root({
       financialHealth: "",
       competitivePosition: "",
       recentNews: "",
-      managementRisks: "",
       growthProspects: "",
     }),
   }),
@@ -48,21 +46,25 @@ const llm = new ChatGoogleGenerativeAI({
 async function researchNode(state: typeof GraphState.State) {
   const { company } = state;
   
-  // Run all 5 tools in sequence
-  const businessOverview = await researchTools[0].invoke({ company });
-  const financialHealth = await researchTools[1].invoke({ company });
-  const competitivePosition = await researchTools[2].invoke({ company });
-  const recentNews = await researchTools[3].invoke({ company });
-  const growthProspects = await researchTools[4].invoke({ company });
+  // Run all 5 tools in parallel for ~5x speedup
+  const results = await Promise.allSettled([
+    researchTools[0].invoke({ company }),
+    researchTools[1].invoke({ company }),
+    researchTools[2].invoke({ company }),
+    researchTools[3].invoke({ company }),
+    researchTools[4].invoke({ company }),
+  ]);
+
+  const extract = (result: PromiseSettledResult<string>) =>
+    result.status === "fulfilled" ? result.value : "No data found for this query. Proceeding with available information.";
 
   return {
     researchData: {
-      businessOverview,
-      financialHealth,
-      competitivePosition,
-      recentNews,
-      growthProspects,
-      managementRisks: "", // Included in competitive/news analysis
+      businessOverview: extract(results[0]),
+      financialHealth: extract(results[1]),
+      competitivePosition: extract(results[2]),
+      recentNews: extract(results[3]),
+      growthProspects: extract(results[4]),
     }
   };
 }
@@ -93,7 +95,7 @@ async function analysisNode(state: typeof GraphState.State) {
   const response = await structuredLlm.invoke([
     new SystemMessage("You are an expert financial analyst."),
     new HumanMessage(prompt)
-  ]) as any;
+  ]) as z.infer<typeof investmentVerdictSchema>;
 
   return {
     verdict: response.verdict,
@@ -105,20 +107,12 @@ async function analysisNode(state: typeof GraphState.State) {
   };
 }
 
-async function scoringNode(state: typeof GraphState.State) {
-  // We can finalize anything related to scoring here
-  // Right now, analysisNode extracts all data from LLM structured output.
-  return {};
-}
-
-// Build the sequential pipeline
+// Build the sequential pipeline (removed unused scoringNode)
 const workflow = new StateGraph(GraphState)
   .addNode("research_node", researchNode)
   .addNode("analysis_node", analysisNode)
-  .addNode("scoring_node", scoringNode)
   .addEdge(START, "research_node")
   .addEdge("research_node", "analysis_node")
-  .addEdge("analysis_node", "scoring_node")
-  .addEdge("scoring_node", END);
+  .addEdge("analysis_node", END);
 
 export const agent = workflow.compile();

@@ -8,7 +8,6 @@ export interface AgentState {
     financialHealth: string;
     competitivePosition: string;
     recentNews: string;
-    managementRisks: string;
     growthProspects: string;
   };
   verdict: 'INVEST' | 'PASS' | 'NEUTRAL' | null;
